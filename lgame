@@ -152,6 +152,7 @@ while :
 do
 
 	read -rsn3 char
+	char=$(echo "$char" | tr "[:lower:]" "[:upper:]")
 	echo "$char"
 	case $char in
 		$'\e[A')
@@ -168,8 +169,8 @@ do
 				display_list
 			fi
 			;;
-		$'out')
-			exit 0;;
+		$'OUT')
+			break;;
 		$'\0')
 			echo "STARTING THE GAME"
 			game_dir=$(dirname "$Game_path")
@@ -180,11 +181,11 @@ do
 			fi
 			$c_layer "$Game_path"
 			exit 0;;
-		$'sss')
+		$'SSS')
 			echo "Starting Search : "
 			read -r term
 			Search "$term";;
-		$'pro')
+		$'PRO')
 			if [[ -d ~/.steam ]];then
 				proton=$(find ~/.steam/root/steamapps/common -name "proton" | sed -n "1 p")
 			else
@@ -203,6 +204,13 @@ do
 		$'win')
 			echo "Changing to wine"
 			c_layer=wine;;
+		$'REF')
+			create_list
+			display_list
+			;;
 	esac
 
 done
+
+
+rm -f ~/.lgame.txt
