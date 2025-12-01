@@ -14,13 +14,14 @@ else
 fi
 
 if [[ $1 == "-p" ]];then
-	echo "$2" > ~/.config/lgames/games.conf
+	shift
+	echo "$1" > ~/.config/lgames/games.conf
 	echo "PATH HAS BEEN SET!"
 fi
 
-GAMES_DIR=$(cat ~/.config/lgames/games.conf)
+GAMES_DIR=$(<~/.config/lgames/games.conf)
 
-if [[ -n $GAMES_DIR ]]
+if [[ -n "$GAMES_DIR" ]]
 then
 	echo "Searching in the path: $GAMES_DIR"
 	echo "If a game is not working, write 'pro' in order to use proton"
@@ -34,43 +35,42 @@ fi
 
 ls "$GAMES_DIR" > ~/.config/lgames/Games.txt
 
-games_count=$(( $(wc -l ~/.config/lgames/Games.txt | cut -b -2) ))
+games_count=$(wc -l ~/.config/lgames/Games.txt | cut -d ' ' -f 1)
 count=1
 Game_path=""
 
 create_list(){
-	if [[ -f ~/.lgame.txt ]];then
-		rm ~/.lgame.txt
-	fi
+	rm -f ~/.lgame.txt
 	touch ~/.lgame.txt
 
 	for (( i = count ; i <= games_count ; i++));
 	do
 		first_game=$( sed -n "$i p" ~/.config/lgames/Games.txt )
-
 		first_character=$( echo "$first_game" | cut -c 1 )
 
-		#First try
-		Game_exe=$( find  "$GAMES_DIR"/"$first_game" -iname "$first_game*.exe" -printf "%f\n" | sed -n "1p")
+		#First try : search by full name
+		Game_exe=$( find  "$GAMES_DIR/$first_game" -type f -iname "$first_game*.exe" -printf "%f\n" | sed -n "1p")
+
 		if [[ -z $Game_exe ]]; then
-			#Second try
+			#Second try: search by character
 			Game_exe=$( find "$GAMES_DIR"/"$first_game" -iname "$first_character*.exe" -printf "%f\n" | sed -n "1p")
 		fi
 
 		if [ -z "$Game_exe" ]
 		then
-			#Third try
+			#Third try : getting whatever exe file that there is
 			Game_exe=$(find "$GAMES_DIR"/"$first_game" -iname "*.exe" -printf "%f\n" | sort -t '\0' -n | sed -n "1 p")
 		fi
 
 		if [ -z "$Game_exe" ]
 		then
-			echo -e "Couldn't find the following game : $first_game\nPlease check if the folder is not empty or launch the game manually" >> ~/.lgame.txt
+			
+			echo -e "\nCouldn't find the following game : $first_game\n-------------------------\n" >> ~/.lgame.txt
 			games_count=$(( games_count - 1 ))
 			continue
 		fi
 
-		local Game_path=$( find "$GAMES_DIR"/"$first_game" -iname "$Game_exe" | sort -r| sed -n "1p" | cut -c 30- )
+		local Game_path=$( find "$GAMES_DIR"/"$first_game" -type f -iname "$Game_exe" | sed -n "1p")
 		echo -e "$Game_path\n[APP] : [$Game_exe]\n-------------------------\n" >> ~/.lgame.txt
 
 	done
@@ -100,16 +100,17 @@ display_list(){
 	fi
 
 	local SAP=4 #space between apps
-	local c=$((SAP*count))
-
-	sed -n "$(( c-2 )),$(( (DISPLAYED_GAMES*6) + c )) p" ~/.lgame.txt
+	local c=$(( SAP*count ))
 
 	echo -e "\e[33m\e[1m"
-	sed -n "$(( c - 2 )),$((c-2)) p" ~/.lgame.txt
+	sed -n "$((c-2)) p" ~/.lgame.txt
 	echo -e "\e[0m"
 
-	Game_path="$GAMES_DIR/$( sed -n "$((c-3)) p" ~/.lgame.txt)"
-	echo -e "Count: $count, Total_games: $games_count\ntype 'out' in order to exit"
+	sed -n "$(( c-1 )),$(( (DISPLAYED_GAMES*6) + c )) p" ~/.lgame.txt
+
+
+	Game_path="$( sed -n "$((c-3)) p" ~/.lgame.txt)"
+	echo -e "\nTotal_games: $games_count\ntype 'out' in order to exit"
 
 }
 
@@ -145,6 +146,8 @@ Search(){
 }
 
 display_list
+tput civis
+trap "rm -rf ~/.lgame.txt && tput cnorm" EXIT
 
 #The main loop
 
@@ -152,9 +155,24 @@ while :
 do
 
 	read -rsn3 char
+	echo $char
+	if [[ -z $char ]];then
+
+		echo "STARTING THE GAME"
+                        game_dir=$(dirname "$Game_path")
+			cd "$game_dir"
+                        if [[ $c_layer == $proton ]];then
+                                "$c_layer" run "$Game_path"
+                                exit 0
+                        fi
+                        $c_layer "$Game_path"
+                        break;
+	fi
 	char=$(echo "$char" | tr "[:lower:]" "[:upper:]")
-	echo "$char"
-	case $char in
+	if [[ -z $char ]];then
+		continue;
+	fi
+	case "$char" in
 		$'\e[A')
 			if [[ $count -gt 1 ]];then
 				count=$(( (count - 1) ))
@@ -170,17 +188,8 @@ do
 			fi
 			;;
 		$'OUT')
-			break;;
-		$'\0')
-			echo "STARTING THE GAME"
-			game_dir=$(dirname "$Game_path")
-			cd "$game_dir"
-			if [[ $c_layer == $proton ]];then
-				"$c_layer" run "$Game_path"
-				exit 0
-			fi
-			$c_layer "$Game_path"
-			exit 0;;
+			break
+			;;
 		$'SSS')
 			echo "Starting Search : "
 			read -r term
@@ -190,11 +199,11 @@ do
 				proton=$(find ~/.steam/root/steamapps/common -name "proton" | sed -n "1 p")
 			else
 				echo "steam folder wasn't found, is steam installed?"
-				exit 255
+				exit 1
 			fi
 			if [[ -z $proton ]];then
 				echo "Proton wasn't found, please check if it is installed"
-				exit 255
+				exit 1
 			fi
 			echo "Changing to proton"
 			mkdir -p ~/.steam/steam/steamapps/compatdata/shared_prefix
@@ -210,7 +219,9 @@ do
 			;;
 	esac
 
+
+
 done
 
+echo -e "\n"
 
-rm -f ~/.lgame.txt
