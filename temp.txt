@@ -1,5 +1,0 @@
-: 1755030002:0;sudo find / -name "shell"
-: 1755030002:0;chsh -s /usr/bin/zsh
-: 1755030002:0;sh -c "$(wget https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -O -)"~
-: 1755030002:0;sudo find / -name "agnoster"
-: 1755030002:0;sudo find ~ -name "agnoster"

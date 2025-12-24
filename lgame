@@ -2,16 +2,7 @@
 
 
 #Making configs folder and setting the path.
-if [[ -d ~/.config/lgames ]]
-then
-	if [[ ! -f ~/.config/lgames/games.conf ]]
-	then
-		touch ~/.config/lgames/games.conf
-	fi
-else
-	mkdir ~/.config/lgames
-	touch ~/.config/lgames/games.conf
-fi
+[ -d ~/.config/lgames ] || mkdir -p ~/.config/lgames
 
 if [[ $1 == "-p" ]];then
 	shift
@@ -19,7 +10,9 @@ if [[ $1 == "-p" ]];then
 	echo "PATH HAS BEEN SET!"
 fi
 
-GAMES_DIR=$(<~/.config/lgames/games.conf)
+if [ ! -f "~/.config/lgame/games.conf" ];then 
+	GAMES_DIR=$(<~/.config/lgames/games.conf)
+fi
 
 if [[ -n "$GAMES_DIR" ]]
 then
@@ -30,19 +23,17 @@ else
 	echo -e "\e[37mgames.conf file is empty.\e[0m"
 	echo "usage: lgame -p <path to the games/programes directory>"
 	echo "the path is then stored in ~/.config/lgames/games.conf so you can call it again without an arguement"
-	exit 255
+	exit 1
 fi
 
 ls "$GAMES_DIR" > ~/.config/lgames/Games.txt
 
-games_count=$(wc -l ~/.config/lgames/Games.txt | cut -d ' ' -f 1)
+games_count=$(wc -l < ~/.config/lgames/Games.txt)
 count=1
 Game_path=""
 
 create_list(){
-	rm -f ~/.lgame.txt
-	touch ~/.lgame.txt
-
+	
 	for (( i = count ; i <= games_count ; i++));
 	do
 		first_game=$( sed -n "$i p" ~/.config/lgames/Games.txt )
@@ -51,20 +42,18 @@ create_list(){
 		#First try : search by full name
 		Game_exe=$( find  "$GAMES_DIR/$first_game" -type f -iname "$first_game*.exe" -printf "%f\n" | sed -n "1p")
 
-		if [[ -z $Game_exe ]]; then
-			#Second try: search by character
-			Game_exe=$( find "$GAMES_DIR"/"$first_game" -iname "$first_character*.exe" -printf "%f\n" | sed -n "1p")
-		fi
 
-		if [ -z "$Game_exe" ]
-		then
-			#Third try : getting whatever exe file that there is
-			Game_exe=$(find "$GAMES_DIR"/"$first_game" -iname "*.exe" -printf "%f\n" | sort -t '\0' -n | sed -n "1 p")
+		#Searching by the first character.
+		if [  -z "$Game_exe" ];then
+			Game_exe=$( find "$GAMES_DIR"/"$first_game" -type f -iname "$first_character*.exe" -printf "%f\n" | sed -n "1p")
 		fi
-
-		if [ -z "$Game_exe" ]
+		#Getting the first .exe file found.
+		if [ -z "$Game_exe" ];then
+			Game_exe=$(find "$GAMES_DIR"/"$first_game" -type f -iname "*.exe" -printf "%f\n" | sort -t '\0' -n | sed -n "1 p")
+		fi
+		if [[ -z "$Game_exe" ]]
 		then
-			
+
 			echo -e "\nCouldn't find the following game : $first_game\n-------------------------\n" >> ~/.lgame.txt
 			games_count=$(( games_count - 1 ))
 			continue
@@ -116,7 +105,7 @@ display_list(){
 
 Search(){
 
-	local line_number=$( grep -i -n "$1" < ~/.lgame.txt | sed -n "1 p" | grep -E -o "\b('$list_count'|[1-9]?[0-9]):" | tr -d ':')
+	local line_number=$( grep -i -n "$1" < ~/.lgame.txt | sed -n "1 p" | cut -d ":" -f 1)
 
 	if [[ -z $line_number ]];then
 		echo "GAME NOT FOUND!"
@@ -126,14 +115,14 @@ Search(){
 	fi
 
 	Game=$(sed -n "$line_number,$(( line_number+2 )) p" ~/.lgame.txt)
-	Game_path="$GAMES_DIR/$(sed -n "$line_number p" ~/.lgame.txt)"
+	Game_path="$(sed -n "$line_number p" ~/.lgame.txt)"
 
 	if [[ -n $Game ]];then
 		clear
 		echo "$Game"
 		echo -e "GAME FOUND!\nPATH : $Game_path\nLAUNCHING..."
-		sleep 2s
 		game_dir=$(dirname "$Game_path")
+		echo "$Game_path"
 		cd "$game_dir"
 		if [[ $c_layer == $proton ]];then
 			"$c_layer" run "$Game_path"
@@ -159,14 +148,14 @@ do
 	if [[ -z $char ]];then
 
 		echo "STARTING THE GAME"
-                        game_dir=$(dirname "$Game_path")
-			cd "$game_dir"
-                        if [[ $c_layer == $proton ]];then
-                                "$c_layer" run "$Game_path"
-                                exit 0
-                        fi
-                        $c_layer "$Game_path"
-                        break;
+		game_dir=$(dirname "$Game_path")
+		cd "$game_dir"
+		if [[ $c_layer == $proton ]];then
+			"$c_layer" run "$Game_path"
+			exit 0
+		fi
+		$c_layer "$Game_path"
+		break;
 	fi
 	char=$(echo "$char" | tr "[:lower:]" "[:upper:]")
 	if [[ -z $char ]];then
@@ -222,6 +211,3 @@ do
 
 
 done
-
-echo -e "\n"
-
