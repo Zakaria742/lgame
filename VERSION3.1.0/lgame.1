@@ -1,0 +1,28 @@
+.\" Manpage for lgame.
+.\" Github repository: https://github.com/Zakaria742/lgame.git
+
+.TH lgame 1 "20 August 2025" "1.0" "lgame man page"
+.SH NAME
+lgame \- CLI game launcher
+.SH SYNOPSIS
+lgame -p [GAMES_DIR]
+.SH DESCRIPTION
+lgame is a Command line interface game launcher made with shell, it uses wine as the compatibility layer to launch and manage the game.
+.SH WARNING
+This script heavily relies on the name of the game folder, so if a game doesn't show up on the list, changing the name of the executable to the name of the folder or something closer is enough to fix the problem.
+in case of bat files, you can change the .bat extension to .bat.exe so the script can read it. The .exe at the end is for wine/proton so they can launch it, for without it, they wouldn't work.
+.SH OPTIONS
+\fB\-p\fR    set the path to the games directory, (stored in ~/.config/lgame/games.conf)
+.SH COMMANDS
+.TP
+\fBsearch\fR start search
+.TP
+\fBproton\fR Use proton (if found)
+.TP
+\fBwine\fR Use wine
+.TP
+\fBshow_path\fR Show the absolute path
+.TP
+\fBhide_path\fR Hide the absolute path
+.SH AUTHOR
+Written by Zakaria742. (github : https://github.com/Zakaria742)

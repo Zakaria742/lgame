@@ -1,0 +1,24 @@
+.TH lgame 1 "20 August 2025" "3.0" "lgame man page"
+.SH NOMBRE
+lgame \- CLI Lanzador de juegos
+.SH USO
+lgame -p [DIRECTORIO DEL JUEGOS]
+.SH DESCRIPCION
+lgame es un CLI Lanzador de juegos hecho con shell, que utiliza wine como la capa de compatibilidad para lanzar y gestionar los juegos
+.SH ADVERTENCIA
+Esta guion depende en gran medida del nombre de la carpeta del juegos, asi, Si una juego no aparece en la lista, cambiando las nombre del ejecutable para el de la carpeta o algo mas cercano es suficiente para resolver el problema.
+en el caso de archivo bat, tu puede cambiar la .bat extension a .bat.exe par que el script pueda leerlo. Las .exe al final es por wine/proton asi ellos puedos se lanza, porque sin ella, no funcionarian.
+.SH OPCIONES
+\fB\-p\fR conjunto el camino para los juegos carpeta, (guardado en ~/.config/lgame/games.conf)
+.SH COMANDOS
+.TP
+\fBBosqueda\fR Iniciar busqueda
+.TP
+\fBproton\fR Uso proton 
+.TP
+\fBwine\fR Uso wine
+.TP
+\fBmostrar_camino\fR Mostrar el camino absoluto
+\fBesconder_camino\fR esconder el camino absoluto
+.SH AUTOR
+Escritto por Zakaria742. (github : https://github.com/Zakaria742)

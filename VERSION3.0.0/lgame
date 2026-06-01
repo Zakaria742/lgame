@@ -1,0 +1,352 @@
+#!/usr/bin/env bash
+
+CACHE_PATH=$HOME/.cache/lgames
+CONF_PATH=$HOME/.config/lgames
+GAMES_PATH=""
+
+EXE_ARRAY=()
+EXE_PATH=()
+
+TOTAL_GAMES=0
+
+LINES=$(tput lines)
+COLS=$(tput cols)
+
+FOLLOWER=1
+CURRENT_GAME=0
+PAGE=0
+
+C_LAYER="proton"
+
+#COLORS
+if [[ -z $FG_COLOR ]];then
+  FG_COLOR="#ffffff"
+  BG_COLOR="#000000"
+  BG_SELECTOR_COLOR="#ffffff"
+  TEXT_SELECTOR_COLOR="#000000"
+fi
+color_array=($FG_COLOR $BG_COLOR $BG_SELECTOR_COLOR $TEXT_SELECTOR_COLOR)
+
+hex_to_color(){
+  FG_COLOR=""
+  BG_COLOR=""
+  SELECTOR_COLOR=""
+  for(( k=0; k <= 3; k++ ));do
+  for(( i=0; i < 3; i++ ));do
+  hex_color[i]=$(printf "%d" "0x$(echo "${color_array[k]###}" | cut -c $((1+i*2))-$((2+i*2)) )" )
+done
+case "$k" in
+  0)
+    FG_COLOR="\e[38;2;${hex_color[0]};${hex_color[1]};${hex_color[2]}m"
+    ;;
+  1)
+    BG_COLOR="\e[48;2;${hex_color[0]};${hex_color[1]};${hex_color[2]}m"
+    ;;
+  2)
+    BG_SELECTOR_COLOR=$SELECTOR_COLOR"\e[48;2;${hex_color[0]};${hex_color[1]};${hex_color[2]}m"
+    ;;
+  3)
+    TEXT_SELECTOR_COLOR=$SELECTOR_COLOR"\e[38;2;${hex_color[0]};${hex_color[1]};${hex_color[2]}m"
+    ;;
+esac
+done
+SELECT_COLOR=$BG_SELECTOR_COLOR$TEXT_SELECTOR_COLOR
+}
+
+check_files(){
+  if [[ ! -d $CONF_PATH ]];then
+    mkdir $CONF_PATH
+  fi
+  if [[ ! -d $CACHE_PATH ]];then
+    mkdir $CACHE_PATH
+  fi
+}
+
+last_line(){
+  echo -ne "$BG_COLOR$FG_COLOR\e[$LINES;0f\e[K"
+}
+
+print_logo(){
+  logo="LGAME"
+  printf "\e[%d;%df\e[1m%s\e[0m" "$((LINES/2))" "$((COLS/2-5))" "$logo"
+}
+
+
+print_help(){
+  printf " -p : set the path to the directory\n"
+  printf " options : \n"
+  printf " search : search for your game\n"
+  printf " proton : use proton\n"
+  printf " wine : use wine\n"
+  printf " show_path : show the absolute path\n"
+  printf " hide_path : hide the absolute path\n"
+}
+
+launch_game(){
+  local GAME
+  if [[ -z "$1" ]];then
+    GAME="${EXE_PATH[$CURRENT_GAME]}"
+  else
+    GAME="${EXE_PATH[$1]}"
+  fi
+  printf "$BG_COLOR$FG_COLOR"
+  game_path=$(dirname "$GAME")
+  cd "$game_path"
+  case "$C_LAYER" in
+    "proton")
+      clear
+      local PROTON_PATH=$(find ~/.steam/root/steamapps/common -maxdepth 2 -type f -iname "proton" | sed -n 1p)
+      export STEAM_COMPAT_DATA_PATH=~/.steam/steam/steamapps/compatdata/shared_prefix
+      export STEAM_COMPAT_CLIENT_INSTALL_PATH=~/.steam/root
+      "$PROTON_PATH" run "$GAME" 
+      ;;
+    "wine")
+      clear
+      wine "$GAME"
+      ;;
+  esac
+  running=0
+
+}
+
+get_options(){
+  while [[ ! -z "$1" ]];do
+    case "$1" in
+      "-p")
+        shift
+        if [[ -z "$1" || ! -d "$1" ]];then
+          printf "Please specifie the absolute path\n"
+          exit 1
+        fi
+        printf "$1" > "$CONF_PATH/path.txt"
+        printf "path has been set\n"
+        GAMES_PATH="$1"
+        ;;
+      "-h")
+        print_help
+        exit 0
+        ;;
+      *)
+        reset
+        echo "Option not recognized!"
+        print_help
+        exit 1
+        ;;
+    esac
+    shift
+  done
+}
+
+check_info(){
+  if [[ ! -f "$CONF_PATH/path.txt" ]];then
+    reset
+    echo "Please specify the path to the games folder using the -p option"
+    exit 1
+  fi
+  GAMES_PATH=$(<"$CONF_PATH/path.txt")
+}
+reset(){
+  printf "\e[?1049l\e[?25h\e[?7h"
+}
+init(){
+  trap reset EXIT
+  printf "\e[?1049h\e[?25l\e[?7l"
+}
+
+get_games(){
+
+  mode="REFRESH"
+  list=$(find $GAMES_PATH -maxdepth 1 -printf "%f\n" | tail -n +2)
+  echo "$list" > $CONF_PATH/games.txt
+
+  if [[ ! -f $CACHE_PATH/old_games.txt ]];then 
+    echo "$list" > $CACHE_PATH/old_games.txt
+  else
+    diff $CACHE_PATH/old_games.txt $CONF_PATH/games.txt > /dev/null
+    if [[  "$?" -eq 1 ]];then
+      echo "$list" > $CACHE_PATH/old_games.txt
+    else
+      mode="NO-REFRESH"
+    fi
+  fi
+  TOTAL_GAMES=$(wc -l $CONF_PATH/games.txt | cut -d " " -f 1)
+}
+
+get_executables(){
+  local mode
+  mode="$1"
+  if [[ $mode == "REFRESH" ]];then
+    local word first_letter exe
+    for(( i = 1 ; i <= TOTAL_GAMES ; i++ ));do
+    word=$(sed -n "$i p" $CONF_PATH/games.txt)
+    first_letter=$( echo "$word" | cut -c 1 )
+    processd_word=$(echo "$word" | tr "." " " | cut -d " " -f 1)
+    exe=$(find "$GAMES_PATH/$word" -type f -iname "$processd_word*.exe*" | head -n 1)
+    if [[ -z "$exe" ]];then
+      exe=$(find "$GAMES_PATH/$word" -type f -iname "$first_letter*.exe*" | head -n 1)
+      if [[ -z "$exe" ]];then
+        exe=$(find "$GAMES_PATH/$word" -type f -iname "*.exe*" | head -n 1)
+      fi
+    fi
+    EXE_ARRAY[$((i-1))]=$word
+    EXE_PATH[$((i-1))]="$exe"
+  done
+  printf "%s\n" "${EXE_ARRAY[@]}" > $CACHE_PATH/exe_array.txt
+  printf "%s\n" "${EXE_PATH[@]}" > $CACHE_PATH/exe_path.txt
+else
+
+#A tokenizer for fetching the games and their paths
+mapfile -t EXE_ARRAY < $CACHE_PATH/exe_array.txt
+mapfile -t EXE_PATH < $CACHE_PATH/exe_path.txt
+
+  fi
+  #EXE is a buffer used to change between either showing the path to the game or hiding it
+  EXE=("${EXE_ARRAY[@]}")
+}
+
+print_games(){
+  local shift="$1"
+  printf "$BG_COLOR$FG_COLOR\e[2J\e[H"
+  printf "%s\n" "${EXE_ARRAY[@]:$((shift)):$((LINES-1))}"
+  printf "%s\e[0m" "${EXE_ARRAY[@]:$((LINES+shift)):1}"
+}
+
+selector(){
+  printf "$SELECT_COLOR"
+  printf "\e[%d;0f\e[K%s\e[0m" "$1" "${EXE_ARRAY[$CURRENT_GAME]}"
+}
+
+current_percentage(){
+  local perc=$(( (CURRENT_GAME*100/(TOTAL_GAMES-1)) ))
+  printf "$BG_COLOR$FG_COLOR\e[0;%df\e[K%s\e[0m" "$((COLS-3))" "$perc%"
+}
+
+move(){
+  case "$char" in
+    "[A")
+      if [[ $CURRENT_GAME -ge 1 ]];then
+        if [[ $FOLLOWER -le 1 ]];then
+          PAGE=$((PAGE-1))
+          print_games $PAGE
+        else
+          FOLLOWER=$((FOLLOWER-1))
+        fi
+        CURRENT_GAME=$((CURRENT_GAME-1))
+        printf "\e[%d;0f$BG_COLOR$FG_COLOR%s\e[K" "$((FOLLOWER+1))" "${EXE_ARRAY[$((CURRENT_GAME+1))]}"
+      fi
+      ;;
+    "[B")
+      if [[ $CURRENT_GAME -le $((TOTAL_GAMES-2)) ]];then
+        if [[ $FOLLOWER -ge $LINES ]];then
+          PAGE=$((PAGE+1))
+          print_games $PAGE
+        else
+          FOLLOWER=$((FOLLOWER+1))
+        fi
+        CURRENT_GAME=$((CURRENT_GAME+1))
+        printf "\e[%d;0f$BG_COLOR$FG_COLOR%s\e[K" "$((FOLLOWER-1))" "${EXE_ARRAY[$((CURRENT_GAME-1))]}"
+      fi
+      ;;
+  esac
+  selector $FOLLOWER
+  current_percentage
+
+}
+
+process_options(){
+
+  last_line
+  echo -n "/"
+  read -r option
+  print_games $PAGE
+  last_line
+  case "$option" in
+    "proton")
+      C_LAYER="proton"
+      printf "Changed to proton successfully!"
+      ;;
+    "wine")
+      C_LAYER="wine"
+      printf "Changed to wine successfully!"
+      ;;
+    "show_path")
+
+      EXE_ARRAY=("${EXE_PATH[@]}")
+      print_games $PAGE
+      ;;
+    "hide_path")
+      EXE_ARRAY=("${EXE[@]}")
+      print_games $PAGE
+      ;;
+    "search")
+      last_line
+      printf "Name : "
+      read -r name
+      print_games $PAGE
+      local l=0
+      for i in "${EXE_PATH[@]}";do
+        i=$( echo "$i" | tr "[:upper:]" "[:lower:]")
+        name=$( echo "$name" | tr "[:upper:]" "[:lower:]")
+        if [[ "$i" == *"$name"* ]];then
+          last_line
+          printf "Found the game : ${EXE_ARRAY[$l]}"
+          found=1
+          sleep 1
+          break
+        fi
+        l=$((l+1))
+      done
+      if [[ $found ]];then
+        launch_game $l
+      else
+        last_line
+        echo -n "Game not found"
+      fi
+      ;;
+    *)
+      printf "Argument not recognized"
+      ;;
+  esac
+  selector $FOLLOWER
+}
+process_input(){
+  read -rsn1 char
+  if [[ "$char" == $'\e' ]];then
+    read -rsn2 char
+    move
+  elif [[ $char == $'\0' ]];then
+    launch_game 
+    return 
+  elif [[ $char == "/" ]];then
+    process_options
+  fi
+}
+
+main(){
+
+  get_options "$@"
+
+  hex_to_color
+  init
+
+  check_files
+
+
+  check_info
+
+  get_games
+
+  print_logo
+
+  get_executables $mode
+
+  print_games $PAGE
+
+  selector 0
+
+  while [[ ! $char == [Qq] && ! $running == 0 ]];do
+    process_input
+  done
+}
+
+main "$@"

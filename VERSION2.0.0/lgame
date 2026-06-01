@@ -1,0 +1,390 @@
+#!/bin/bash
+
+
+#Making configs folder and setting the path.
+[ -d ~/.config/lgames ] || mkdir -p ~/.config/lgames
+
+if [[ $1 == "-p" ]];then
+  shift echo "$1" > ~/.config/lgames/path.txt
+  echo "PATH HAS BEEN SET!"
+fi
+
+if [ ! -f "$HOME/.config/lgame/path.txt" ];then 
+  GAMES_DIR=$(<~/.config/lgames/path.txt)
+fi
+
+if [[ -n "$GAMES_DIR" ]]
+then
+  echo "Searching in the path: $GAMES_DIR"
+  echo "If a game is not working, write 'pro' in order to use proton"
+  sleep 1
+else
+  echo -e "\e[37mpath.txt file is empty.\e[0m"
+  echo "usage: lgame -p <path to the games/programes directory>"
+  echo "the path is then stored in ~/.config/lgames/path.txt so you can call it again without an arguement"
+  exit 1
+fi
+ls "$GAMES_DIR" > ~/.config/lgames/Games.txt
+
+
+create_list(){
+
+  for (( i = count ; i <= games_count ; i++));
+  do
+    first_game=$( sed -n "$i p" ~/.config/lgames/Games.txt )
+    first_character=$( echo "$first_game" | cut -c 1 )
+
+    #First try : search by full name
+    Game_exe=$( find  "$GAMES_DIR/$first_game" -type f -iname "$first_game*.exe" -printf "%f\n" | sed -n "1p")
+
+
+    #Searching by the first character.
+    if [  -z "$Game_exe" ];then
+      Game_exe=$( find "$GAMES_DIR"/"$first_game" -type f -iname "$first_character*.exe" -printf "%f\n" | sed -n "1p")
+    fi
+    #Getting the first .exe file found.
+    if [ -z "$Game_exe" ];then
+      Game_exe=$(find "$GAMES_DIR"/"$first_game" -type f -iname "*.exe" -printf "%f\n" | sort -t '\0' -n | sed -n "1 p")
+    fi
+    if [[ -z "$Game_exe" ]]
+    then
+      games_count=$(( games_count - 1 ))
+      i=$(( i - 1 ));
+      continue
+    fi
+
+    Games_path_array[i]=$( find "$GAMES_DIR"/"$first_game" -type f -iname "$Game_exe" | sed -n "1p")
+    Games_array[i]="$Game_exe"
+    Games_icons_array[i]=$( find "$GAMES_DIR"/"$first_game" -type f -iname "*.png" | sed -n "1p")
+    echo "$Game_exe" >> ~/.lgame.txt
+
+  done
+}
+
+
+print_bg(){
+  printf "$bg_color"
+  printf "$fg_color"
+  printf "\e[$(tput lines);0f\e[2J"
+}
+#displaying the list found in ~/.lgame.txt
+print_list(){
+  local v_shift=$1
+  local running=1
+  if [[ ! -z "$2" ]];then
+    :>"./$2"
+    printf "$bg_color" >> "./$2"
+    printf "$fg_color" >> "./$2"
+    printf "\e[$(tput lines);0f\e[2J" >> "./$2"
+  else
+    printf "\e[H\e[2J"
+    printf "\e[?7h"
+    print_bg $(tput lines)
+    printf '\e[?7l'
+  fi
+  for i in $(seq $v_shift $((games_count/total_cols)));do
+    if [[ ! $running ]];then
+      break
+    fi
+    for j in $(seq 1 $col $(( $(tput cols) - total_cols - 2 )) );do
+      local current_game=$(( i*total_cols + j%(col-1) ))
+      local current_line=$(( (i+1+y-v_shift) ))
+      if [[ -z ${Games_array[$current_game]} || $current_line -ge $(tput lines) ]];then
+        running=0
+        break 
+      fi
+      if [[ -z "$2" ]];then
+        printf "\e[$current_line;$j f$current_game ${Games_array[$current_game]}"
+      else
+        printf "\e[$current_line;$j f$current_game ${Games_array[$current_game]}" >> "./$2"
+      fi
+    done
+  done
+  printf "\e[0m"
+}
+
+display_list(){
+  current_game=$(( (count-1)*total_cols + (line*col)%(col-1) ))
+  current_line=$selection
+  Game_path="${Games_path_array[$((current_game+1))]}"
+
+  if [[ $update -ge 1 ]];then
+    if [[ $update -eq 1 ]];then
+      current_line=$(($(tput lines)-1))
+      selection=$((current_line))
+      print_file="./top.txt"
+    else
+      selection=1
+      current_line=$selection
+      print_file="./bottom.txt"
+    fi
+    update=0
+    old_y=$(($(tput lines)*2))
+    old_x=$((line*col+1))
+    old_game=$((current_game-1))
+    print_list $(( ($(tput lines)-1)*(page+1) )) "bottom.txt" &
+    print_list $(( ($(tput lines)-1)*(page-1) )) "top.txt" &
+    cat "$print_file" 2> /dev/null
+
+  fi
+  printf "$bg_color"
+  printf "$fg_color"
+  printf "\x1b[$old_y;$old_x f$old_game ${Games_array[$old_game]}    "
+  printf "$select_fg_color"
+  printf "$select_color\e[1m"
+  printf "\x1b[$current_line;$((line*col+1)) f-> ${Games_array[$((current_game+1))]} <-"
+  printf "$fg_color"
+  printf "$bg_color"
+  printf "\e[$(tput lines);0f\e[K"
+  if [[ -z "$Game_path" ]];then
+    printf "Page : $page | Game's path wasn't found"
+  else
+    printf "Page : $page | Game path : %s" "$Game_path"
+  fi
+  printf "\e[0m"
+
+  old_y=$current_line
+  old_x=$((line*col+1))
+  old_game=$((current_game+1))
+
+
+  #print_image
+}
+
+print_image(){
+  print_bg $(tput lines)
+  image="${Games_icons_array[$((current_game+1))]}"
+  if [[ -z $image ]];then
+    return 
+  fi
+  height=50
+  image_height=$(identify -format "%h" "$image")
+  pos_y=$(( (games_count/total_cols + 1) + 3))
+  printf "\e[$pos_y;0f\e[J"
+  echo "$height $height" | imvi "$image"
+}
+
+Search(){
+
+  local line_number=$( grep -i -n "$1" < ~/.lgame.txt | sed -n "1 p" | cut -d ":" -f 1)
+
+  if [[ -z $line_number ]];then
+    print_line "GAME NOT FOUND!"
+    return 
+  fi
+
+  Game_path="${Games_path_array[$line_number]}"
+  if [[ -n $Game_path ]];then
+    clear
+    echo "$Game"
+    echo -e "GAME FOUND!\nPATH : $Game_path\nLAUNCHING..."
+    game_dir=$(dirname "$Game_path")
+    echo "$Game_path"
+    cd "$game_dir" || exit
+    if [[ "$c_layer" == "$proton" ]];then
+      "$c_layer" run "$Game_path"
+      exit 0
+    fi
+    $c_layer "$Game_path"
+    exit 0
+
+  fi
+}
+
+
+move(){
+  case "$1" in
+    "up")
+      if [[ $count -gt 1 ]];then
+        count=$(( count - 1 ))
+        selection=$(( selection - 1 ))
+        if [[ $selection -le 0 ]];then
+          update=1
+          page=$((page-1))
+        fi
+        display_list
+      fi
+      ;;
+    "down")
+      if [[ $((current_game+total_cols)) -lt $games_count ]];then
+        count=$(( count + 1 ))
+        selection=$(( selection + 1 ))
+        if [[ $((selection-1)) -gt $(( $(tput lines) - 2 )) ]];then
+          update=2
+          page=$((page+1))
+        fi
+        display_list
+      fi
+      ;;
+    "right")
+      current_game=$(( (count-1)*total_cols + ((line+1)*col)%(col-1) ))
+      if [[ $((current_game+1)) -le $games_count && $line -le $(( total_cols - 2)) ]];then
+        line=$(( line + 1 ))
+        display_list
+      fi
+      ;;
+    "left")
+      if [[ $line -ge 1 ]];then
+        line=$(( line - 1 ))
+        display_list
+      fi
+      ;;
+  esac
+
+}
+
+read_input(){
+  read -rsn1 char
+  char=$(echo "$char" | tr "[:lower:]" "[:upper:]")
+  case $char in
+    'K' | 'W')
+      move "up" 
+      ;;
+    'J' | 'S')
+      move "down" 
+      ;;
+    'L' | 'D')
+      move "right" 
+      ;;
+    'H' | 'A')
+      move "left" 
+      ;;
+  esac
+  case $char in
+    $'\0')
+      if [[ -z "$Game_path" ]];then
+        return
+      fi
+      printf "\e[2J\e[HSTARTING THE GAME"
+      game_dir=$(dirname "$Game_path")
+      cd "$game_dir" || exit
+      if [[ "$c_layer" == "$proton" ]];then
+        "$c_layer" run "$Game_path"
+        exit 0
+      fi
+      $c_layer "$Game_path"
+      exit 0
+      ;;
+    $'\e')
+      read -rsn1 char
+      if [[ $char == '[' ]];then
+        read -rsn1 char
+        case $char in
+          'A')
+            move "up" 
+            ;;
+          'B')
+            move "down" 
+            ;;
+          'C')
+            move "right" 
+            ;;
+          'D')
+            move "left" 
+            ;;
+        esac
+      fi
+      ;;
+    '/')
+      write_mode
+      read -r option
+      display_list
+      char=$(echo "$option" | tr "[:upper:]" "[:lower:]")
+      read_options "$option"
+      ;;
+
+    esac
+}
+
+write_mode(){
+  printf "$bg_color$fg_color"
+  printf "\x1b[?25h\x1b[$(( $(tput lines) - 1));0f\e[K/"
+}
+del_line(){
+  printf "\e[1K\e[?25l"
+}
+
+read_options(){
+  case "$1" in
+    '')
+      print_line " "
+      ;;
+    $'exit')
+      exit 0
+      ;;
+    $'search')
+      printf "\e[$(( $(tput lines) - 1 ));0fStarting Search : "
+      read -r term
+      del_line
+      Search "$term";;
+    $'proton')
+      if [[ -d ~/.steam ]];then
+        proton=$(find ~/.steam/root/steamapps/common -name "proton" | sed -n "1 p")
+      else
+        print_line "steam folder wasn't found, is steam installed?"
+        exit 1
+      fi
+      if [[ -z "$proton" ]];then
+        print_line "Proton wasn't found, please check if it is installed"
+        exit 1
+      fi
+      print_line "Changed to proton"
+      mkdir -p ~/.steam/steam/steamapps/compatdata/shared_prefix
+      export STEAM_COMPAT_DATA_PATH=~/.steam/steam/steamapps/compatdata/shared_prefix
+      export STEAM_COMPAT_CLIENT_INSTALL_PATH=~/.steam/root
+      c_layer="$proton";;
+    $'wine')
+      print_line "Changed to wine"
+      c_layer=wine;;
+    $'refresh')
+      printf "\e[?25l"
+      games_count=$(wc -l < ~/.config/lgames/Games.txt)
+      recalibrate
+      create_list
+      print_list 0
+      display_list
+      ;;
+    *)
+      tput civis
+      print_line " $option not understood"
+      ;;
+  esac
+}
+print_line(){
+  printf "$bg_color$fg_color"
+  printf "\e[$(( $(tput lines) - 1));0f\e[K$1\e[?25l"
+}
+tst(){
+  Games_array[$((games_count+1))]="Testing"
+  games_count=$(( games_count + 1))
+}
+#The main loop
+count=1
+Games_path_array=()
+Games_array=()
+Games_icons_array=()
+c_layer=wine
+games_count=$(wc -l < ~/.config/lgames/Games.txt)
+col=0
+selection=1
+total_cols=3
+col=$(( $(tput cols) / total_cols ))
+line=0
+page=0
+bg_color="\e[48;2;240;244;248m"
+fg_color="\e[38;2;44;62;80m"
+select_color="\e[48;2;230;126;34m"
+select_fg_color="\e[38;2;255;255;255m"
+create_list
+tput civis
+trap "tput cnorm && printf '\e[?7h' && stty $stty_original && rm ~/.lgame.txt" EXIT
+#trap '' INT
+clear
+
+print_list 0
+print_list $(( $(tput lines) - 1 )) "bottom.txt" &
+display_list
+while :
+do
+  read_input
+done

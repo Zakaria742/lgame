@@ -6,12 +6,12 @@
 
 if [[ $1 == "-p" ]];then
 	shift
-	echo "$1" > ~/.config/lgames/games.conf
+	echo "$1" > ~/.config/lgames/games.txt
 	echo "PATH HAS BEEN SET!"
 fi
 
-if [ ! -f "~/.config/lgame/games.conf" ];then 
-	GAMES_DIR=$(<~/.config/lgames/games.conf)
+if [ ! -f "~/.config/lgame/path.txt" ];then 
+	GAMES_DIR=$(<~/.config/lgames/path.txt)
 fi
 
 if [[ -n "$GAMES_DIR" ]]
@@ -20,23 +20,23 @@ then
 	echo "If a game is not working, write 'pro' in order to use proton"
 	sleep 2s
 else
-	echo -e "\e[37mgames.conf file is empty.\e[0m"
+	echo -e "\e[37mpath.txt file is empty.\e[0m"
 	echo "usage: lgame -p <path to the games/programes directory>"
-	echo "the path is then stored in ~/.config/lgames/games.conf so you can call it again without an arguement"
+	echo "the path is then stored in ~/.config/lgames/path.conf so you can call it again without an arguement"
 	exit 1
 fi
 
-ls "$GAMES_DIR" > ~/.config/lgames/Games.txt
+ls "$GAMES_DIR" > ~/.config/lgames/games.txt
 
-games_count=$(wc -l < ~/.config/lgames/Games.txt)
+games_count=$(wc -l < ~/.config/lgames/games.txt)
 count=1
 Game_path=""
 
 create_list(){
-	
+	touch ~/.lgame.txt
 	for (( i = count ; i <= games_count ; i++));
 	do
-		first_game=$( sed -n "$i p" ~/.config/lgames/Games.txt )
+		first_game=$( sed -n "$i p" ~/.config/lgames/games.txt )
 		first_character=$( echo "$first_game" | cut -c 1 )
 
 		#First try : search by full name
@@ -70,11 +70,11 @@ create_list
 c_layer=wine
 
 
-list_count=$(( $(wc -l ~/.lgame.txt | grep -iEo "\b([1-9]?[0-9])")/2 - 1 ))
+list_count=$(( $(wc -l ~/.lgame.txt | cut -d " " -f 1)/2 - 1 ))
 
 #displaying the list found in ~/.lgame.txt
 display_list(){
-	clear
+  clear
 	DISPLAYED_GAMES=5
 	if [[ $DISPLAYED_GAMES -ge $list_count ]];then
 		DISPLAYED_GAMES=$list_count
@@ -91,7 +91,7 @@ display_list(){
 	local SAP=4 #space between apps
 	local c=$(( SAP*count ))
 
-	echo -e "\e[33m\e[1m"
+	echo -e "\e[48;2;0;0;0m\e[1m"
 	sed -n "$((c-2)) p" ~/.lgame.txt
 	echo -e "\e[0m"
 
@@ -136,54 +136,84 @@ Search(){
 
 display_list
 tput civis
-trap "rm -rf ~/.lgame.txt && tput cnorm" EXIT
+#trap "rm -rf ~/.lgame.txt && tput cnorm" EXIT
 
-#The main loop
-
-while :
-do
-
-	read -rsn3 char
-	echo $char
-	if [[ -z $char ]];then
-
-		echo "STARTING THE GAME"
-		game_dir=$(dirname "$Game_path")
-		cd "$game_dir"
-		if [[ $c_layer == $proton ]];then
-			"$c_layer" run "$Game_path"
-			exit 0
-		fi
-		$c_layer "$Game_path"
-		break;
-	fi
-	char=$(echo "$char" | tr "[:lower:]" "[:upper:]")
-	if [[ -z $char ]];then
-		continue;
-	fi
-	case "$char" in
-		$'\e[A')
+move(){
+  case "$1" in
+    "up")
 			if [[ $count -gt 1 ]];then
 				count=$(( (count - 1) ))
 				display_list
 			fi
-			;;
-
-		$'\e[B')
+      ;;
+    "down")
 			if [[ $count -lt $games_count ]];then
 
 				count=$(( count + 1 ))
 				display_list
 			fi
+      ;;
+  esac
+
+}
+
+read_input(){
+  read -rsn1 char
+  case $char in
+    $'\0')
+      echo "STARTING THE GAME"
+      game_dir=$(dirname "$Game_path")
+      cd "$game_dir"
+      if [[ $c_layer == $proton ]];then
+        "$c_layer" run "$Game_path"
+        exit 0
+      fi
+      $c_layer "$Game_path"
+      exit 0
+      ;;
+    $'\e')
+      read -rsn1 char
+      if [[ $char == '[' ]];then
+        read -rsn1 char
+        case $char in
+          'A')
+            move "up"
+            ;;
+          'B')
+            move "down"
+            ;;
+        esac
+      fi
+      ;;
+    '/')
+      write_mode
+      printf "/"
+      read -r char
+      display_list
+	    char=$(echo "$char" | tr "[:upper:]" "[:lower:]")
+      read_options "$char"
+      ;;
+
+    esac
+}
+
+write_mode(){
+  printf "\x1b[?25h\x1b[$(tput lines);0f"
+}
+reset_mode(){
+  printf "\x1b[?25h\x1b[$(( $(tput lines)-1 ));0f\x1b[0J"
+}
+
+read_options(){
+  case "$1" in
+		$'exit')
+      exit 0
 			;;
-		$'OUT')
-			break
-			;;
-		$'SSS')
+		$'search')
 			echo "Starting Search : "
 			read -r term
 			Search "$term";;
-		$'PRO')
+		$'proton')
 			if [[ -d ~/.steam ]];then
 				proton=$(find ~/.steam/root/steamapps/common -name "proton" | sed -n "1 p")
 			else
@@ -199,15 +229,19 @@ do
 			export STEAM_COMPAT_DATA_PATH=~/.steam/steam/steamapps/compatdata/shared_prefix
 			export STEAM_COMPAT_CLIENT_INSTALL_PATH=~/.steam/root
 			c_layer="$proton";;
-		$'win')
+		$'wine')
 			echo "Changing to wine"
 			c_layer=wine;;
-		$'REF')
+		$'refresh')
 			create_list
 			display_list
 			;;
-	esac
+    esac
+}
 
+#The main loop
 
-
+while :
+do
+  read_input
 done
