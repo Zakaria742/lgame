@@ -32,10 +32,6 @@ if [[ -z $FG_COLOR ]];then
 fi
 color_array=($FG_COLOR $BG_COLOR $BG_SELECTOR_COLOR $TEXT_SELECTOR_COLOR)
 
-paint_screen(){
-  printf "$BG_COLOR$FG_COLOR\e[2J\e[H"
-}
-
 random_game(){
 	local game_number
 	game_number=$(( $RANDOM % $TOTAL_GAMES ))
@@ -86,7 +82,7 @@ last_line(){
 
 print_logo(){
   logo="LGAME"
-  printf "$BG_COLOR$FG_COLOR\e[%d;%df\e[1m%s\e[0m" "$((LINES/2))" "$(( COLS/2+${#logo[@]} ))" "$logo"
+  printf "$BG_COLOR$FG_COLOR\e[%d;%df\e[1m%s\e[0m" "$((LINES/2))" "$((COLS/2-5))" "$logo"
 }
 
 
@@ -109,7 +105,7 @@ launch_game(){
   else
     GAME="${EXE_PATH[$1]}"
   fi
-  paint_screen
+  printf "$BG_COLOR$FG_COLOR"
   game_path=$(dirname "$GAME")
   cd "$game_path"
   case "$C_LAYER" in
@@ -127,6 +123,7 @@ launch_game(){
       ;;
   esac
   print_games $PAGE
+  #running=0
 
 }
 
@@ -172,7 +169,6 @@ reset(){
 init(){
   trap reset EXIT
   printf "\e[?1049h\e[?25l\e[?7l"
-  paint_screen
 }
 
 
@@ -180,19 +176,20 @@ get_games(){
 
   mode="REFRESH"
   
-  list=$(basename -a $GAMES_PATH/*)
+  list=$(find $GAMES_PATH -maxdepth 1 -printf "%f\n" | tail -n +2)
   echo "$list" > $CONF_PATH/games.txt
 
   if [[ ! -f $CACHE_PATH/old_games.txt ]];then 
     echo "$list" > $CACHE_PATH/old_games.txt
   else
-    if ! diff $CACHE_PATH/old_games.txt $CONF_PATH/games.txt > /dev/null ;then
-	    echo "$list" > $CACHE_PATH/old_games.txt
+    diff $CACHE_PATH/old_games.txt $CONF_PATH/games.txt > /dev/null
+    if [[  "$?" -eq 1 ]];then
+      echo "$list" > $CACHE_PATH/old_games.txt
     else
       mode="NO-REFRESH"
     fi
   fi
-  TOTAL_GAMES=$(wc -l < "$CONF_PATH/games.txt")
+  TOTAL_GAMES=$(wc -l $CONF_PATH/games.txt | cut -d " " -f 1)
   mapfile -t EXE_FOLDER < "$CONF_PATH/games.txt"
 }
 
@@ -247,33 +244,40 @@ print_divider(){
 }
 
 print_info(){
+  if [[ -z "$1" ]];then
     local file file_size bounds buffer cur_line i current_chunk
     bounds=$((COLS/2 + 1))
     for ((f = 0; f < TOTAL_GAMES; f++));do
-      if [[ ! -f "$CONF_PATH/info/${EXE_FOLDER[$f]}.info.txt" ]];then
-          buffer=$buffer$(printf "$FG_COLOR$BG_COLOR\e[1;%dfEmpty" "$bounds")
+      buffer=""
+      if [[ ! -f "$CONF_PATH/info/${EXE_FOLDER[$f]}.txt" ]];then
+          buffer=$buffer$(printf "$FG_COLOR$BG_COLOR\e[1;%dfNo info was found" "$bounds")
           INFO_ARRAY[$f]="$buffer"
           continue
       fi
 
-      file=$(<"$CONF_PATH/info/${EXE_FOLDER[$f]}.info.txt")
+      file=$(<"$CONF_PATH/info/${EXE_FOLDER[$f]}.txt")
       file_size=$(echo "$file" | wc -c)
       cur_line=1
       buffer=$buffer$(printf "$FG_COLOR$BG_COLOR\e[1;%df" "$bounds")
       for(( i = 0 ; i < file_size ; i+=bounds-4));do 
         current_chunk="${file[@]:$i:$((bounds-4))}"
-        buffer=$buffer$(printf "\e[%d;%df" "$cur_line" "$bounds")$current_chunk
+        buffer=$buffer$(printf "\e[%d;%df" "$cur_line" "$bounds")
         cur_line=$((cur_line + 1))
+        buffer=$buffer$(printf "%s" "$current_chunk")
       done
 
       INFO_ARRAY[$f]=$(printf "%s" "$buffer" | tr '\n' ' ')
     done
+    printf "%s\n" "${INFO_ARRAY[@]}" > $CACHE_PATH/infos.txt
+  else
+    mapfile -t INFO_ARRAY < $CACHE_PATH/infos.txt
+  fi
 }
 
 print_games(){
   local TOTAL
   local shift="$1"
-  paint_screen
+  printf "$BG_COLOR$FG_COLOR\e[2J\e[H"
   printf "$ICON%s\n" "${EXE_ARRAY[@]:$shift:$((LINES-1))}"
   if [[ $PRINT_INFO -eq 0 ]];then
   	print_divider
@@ -308,18 +312,6 @@ move(){
         fi
         CURRENT_GAME=$((CURRENT_GAME-1))
         printf "\e[%d;0f$BG_COLOR$FG_COLOR$ICON%s\e[K" "$((FOLLOWER+1))" "${EXE_ARRAY[$((CURRENT_GAME+1))]}"
-     else
-	     if [[ $(( LINES - TOTAL_GAMES )) -le 0 ]];then
-	     PAGE=$((  TOTAL_GAMES - LINES  ))
-	     FOLLOWER=$LINES
-     	     else
-	     PAGE=0
-	     FOLLOWER=$TOTAL_GAMES
-	     fi
-
-        printf "\e[%d;0f$BG_COLOR$FG_COLOR$ICON%s\e[K" "$FOLLOWER" "${EXE_ARRAY[$CURRENT_GAME]}"
-	     CURRENT_GAME=$((TOTAL_GAMES-1))
-	     print_games $PAGE
       fi
       ;;
     "[B" | [jJ])
@@ -332,12 +324,6 @@ move(){
         fi
         CURRENT_GAME=$((CURRENT_GAME+1))
         printf "\e[%d;0f$BG_COLOR$FG_COLOR$ICON%s\e[K" "$((FOLLOWER-1))" "${EXE_ARRAY[$((CURRENT_GAME-1))]}"
-     else
-             printf "\e[%d;0f$BG_COLOR$FG_COLOR$ICON%s\e[K" "$FOLLOWER" "${EXE_ARRAY[$CURRENT_GAME]}"
-	     FOLLOWER=1
-	     PAGE=0
-             CURRENT_GAME=0
-	     print_games $PAGE
       fi
       ;;
   esac
@@ -452,7 +438,7 @@ main(){
   check_info
 
   get_games
- 
+  
   print_info 
 	
   print_logo
@@ -465,7 +451,7 @@ main(){
 
   selector 1
 
-  while [[ ! $char == [Qq] ]];do
+  while [[ ! $char == [Qq] && ! $running == 0 ]];do
     process_input
     if [[ $LINES -ne $(tput lines) ]];then
       LINES=$(tput lines)
@@ -474,7 +460,7 @@ main(){
       if [[ $PRINT_INFO -eq 0 ]];then
       	 print_divider reset
       fi
-      print_info
+      print_info  
     fi
   done
 }
